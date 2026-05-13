@@ -7,7 +7,7 @@ PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/fastfetch-cli/fastfetch/tar.gz/$(PKG_VERSION)?
-PKG_HASH:=skip
+PKG_HASH:=8bf9de6c031aeca8afb85bca5aec2ee82034b339525e2862e0c1dcc6d470d9c0
 
 PKG_LICENSE:=MIT
 PKG_LICENSE_FILES:=LICENSE
