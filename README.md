@@ -8,7 +8,7 @@
 
 ```bash
 # 放入 SDK 的 package 目录
-cp -r Fastfetch4Openwrt /path/to/openwrt-sdk/package/fastfetch
+cp -r Fastfetch4Openwrt/fastfetch /path/to/openwrt-sdk/package/
 
 # 编译
 cd /path/to/openwrt-sdk
