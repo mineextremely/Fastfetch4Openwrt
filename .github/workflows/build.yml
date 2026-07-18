@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: '请填写发布Releases的版本号（留空不发布）'
+        description: 'Release 版本号（留空则使用 version.mk 中的版本）'
         required: false
         default: ''
       text:
@@ -14,9 +14,6 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-env:
-  TAG: "${{ github.event.inputs.tag }}"
-  TZ: Asia/Shanghai
 permissions:
   contents: write
 jobs:
@@ -69,9 +66,20 @@ jobs:
     name: Publish Release
     runs-on: ubuntu-latest
     needs: build
-    if: ${{ github.event.inputs.tag != '' }}
 
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine release tag
+        id: tag
+        run: |
+          VERSION=$(grep -oP 'FASTFETCH_VERSION=\K[0-9.]+' fastfetch/version.mk)
+          INPUT_TAG="${{ github.event.inputs.tag }}"
+          TAG="${INPUT_TAG:-$VERSION}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Release tag: $TAG (version.mk: $VERSION)"
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -83,9 +91,9 @@ jobs:
           mkdir -p release
           for dir in artifacts/*; do
             name=$(basename "$dir")
-            zip -j "release/fastfetch-${{ env.TAG }}-${name}.zip" "$dir"/*.ipk "$dir"/*.apk 2>/dev/null || true
+            zip -j "release/fastfetch-${{ steps.tag.outputs.tag }}-${name}.zip" "$dir"/*.ipk "$dir"/*.apk 2>/dev/null || true
           done
-          echo "build_time=$(TZ=UTC-8 date '+%Y年%m月%d日%H:%M:%S' | jq -sRr @uri)" >> $GITHUB_ENV
+          echo "build_time=$(TZ=UTC-8 date '+%Y年%m月%d日%H:%M:%S' | jq -sRr @uri)" >> "$GITHUB_ENV"
 
       - name: Release
         uses: softprops/action-gh-release@v2
@@ -93,7 +101,7 @@ jobs:
             token: ${{ secrets.GITHUB_TOKEN }}
             body: |
 
-             > ### ![](https://img.shields.io/badge/%E7%BC%96%E8%AF%91%E6%97%B6%E9%97%B4-${{ env.build_time }}-fastfetch?logo=github&labelColor=%E9%A1%BB)![](https://img.shields.io/github/downloads/${{ github.repository }}/${{ env.TAG }}/total?label=%E4%B8%8B%E8%BD%BD%E6%AC%A1%E6%95%B0&logo=github)
+             > ### ![](https://img.shields.io/badge/%E7%BC%96%E8%AF%91%E6%97%B6%E9%97%B4-${{ env.build_time }}-fastfetch?logo=github&labelColor=%E9%A1%BB)![](https://img.shields.io/github/downloads/${{ github.repository }}/${{ steps.tag.outputs.tag }}/total?label=%E4%B8%8B%E8%BD%BD%E6%AC%A1%E6%95%B0&logo=github)
 
              - 其中 **`24.10.x`** 里面是ipk安装包 **`25.12.x`** 里面是apk安装包 **`仅包含fastfetch`**
 
@@ -102,5 +110,5 @@ jobs:
 
              ${{ github.event.inputs.text }}
 
-            tag_name: ${{ env.TAG }}
+            tag_name: ${{ steps.tag.outputs.tag }}
             files: release/*.zip
