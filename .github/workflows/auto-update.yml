@@ -1,0 +1,71 @@
+name: Auto-Update Fastfetch
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for new upstream release
+        id: check
+        run: |
+          CURRENT=$(grep -oP 'FASTFETCH_VERSION=\K[0-9.]+' fastfetch/version.mk)
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+
+          LATEST=$(gh api repos/fastfetch-cli/fastfetch/releases/latest --jq '.tag_name' | sed 's/^v//')
+          echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
+
+          if [ "$CURRENT" = "$LATEST" ]; then
+            echo "up_to_date=true" >> "$GITHUB_OUTPUT"
+            echo "Already up to date ($CURRENT)"
+          else
+            echo "up_to_date=false" >> "$GITHUB_OUTPUT"
+            echo "New version available: $CURRENT -> $LATEST"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Update version and hash
+        if: steps.check.outputs.up_to_date == 'false'
+        id: update
+        run: |
+          VERSION="${{ steps.check.outputs.latest }}"
+
+          # Download tarball and compute SHA256
+          HASH=$(curl -fsSL "https://codeload.github.com/fastfetch-cli/fastfetch/tar.gz/${VERSION}" | sha256sum | cut -d' ' -f1)
+          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
+          echo "Computed SHA256: $HASH"
+
+          # Update version.mk
+          sed -i "s/^FASTFETCH_VERSION=.*/FASTFETCH_VERSION=${VERSION}/" fastfetch/version.mk
+
+          # Update Makefile fallback version and hash
+          sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=\$(or \$(FASTFETCH_VERSION),${VERSION})/" fastfetch/Makefile
+          sed -i "s/^PKG_HASH:=.*/PKG_HASH:=${HASH}/" fastfetch/Makefile
+
+          echo "Updated version.mk and Makefile"
+
+      - name: Create Pull Request
+        if: steps.check.outputs.up_to_date == 'false'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "chore: update fastfetch to ${{ steps.check.outputs.latest }}"
+          title: "chore: update fastfetch to ${{ steps.check.outputs.latest }}"
+          body: |
+            Auto-update fastfetch to upstream version **${{ steps.check.outputs.latest }}**.
+
+            | | |
+            |---|---|
+            | Version | `${{ steps.check.outputs.latest }}` |
+            | SHA256 | `${{ steps.update.outputs.hash }}` |
+          branch: auto-update-fastfetch
+          delete-branch: true
