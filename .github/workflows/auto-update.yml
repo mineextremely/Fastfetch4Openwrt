@@ -56,16 +56,32 @@ jobs:
 
       - name: Create Pull Request
         if: steps.check.outputs.up_to_date == 'false'
-        uses: peter-evans/create-pull-request@v7
-        with:
-          commit-message: "chore: update fastfetch to ${{ steps.check.outputs.latest }}"
-          title: "chore: update fastfetch to ${{ steps.check.outputs.latest }}"
-          body: |
-            Auto-update fastfetch to upstream version **${{ steps.check.outputs.latest }}**.
+        run: |
+          VERSION="${{ steps.check.outputs.latest }}"
+          HASH="${{ steps.update.outputs.hash }}"
+          BRANCH="auto-update-fastfetch-${VERSION}"
 
-            | | |
-            |---|---|
-            | Version | `${{ steps.check.outputs.latest }}` |
-            | SHA256 | `${{ steps.update.outputs.hash }}` |
-          branch: auto-update-fastfetch
-          delete-branch: true
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git checkout -b "$BRANCH"
+          git add fastfetch/version.mk fastfetch/Makefile
+          git commit -m "chore: update fastfetch to ${VERSION}"
+
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --title "chore: update fastfetch to ${VERSION}" \
+            --body "$(cat <<BODY
+        Auto-update fastfetch to upstream version **${VERSION}**.
+
+        | | |
+        |---|---|
+        | Version | \`${VERSION}\` |
+        | SHA256 | \`${HASH}\` |
+        BODY
+        )" \
+            --base master \
+            --head "$BRANCH"
+        env:
+          GH_TOKEN: ${{ github.token }}
