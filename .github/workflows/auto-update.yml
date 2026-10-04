@@ -73,15 +73,15 @@ jobs:
           gh pr create \
             --title "chore: update fastfetch to ${VERSION}" \
             --body "$(cat <<BODY
-        Auto-update fastfetch to upstream version **${VERSION}**.
+          Auto-update fastfetch to upstream version **${VERSION}**.
 
-        | | |
-        |---|---|
-        | Version | \`${VERSION}\` |
-        | SHA256 | \`${HASH}\` |
-        BODY
-        )" \
-            --base master \
+          | | |
+          |---|---|
+          | Version | \`${VERSION}\` |
+          | SHA256 | \`${HASH}\` |
+          BODY
+          )" \
+            --base auto-update-fastfetch \
             --head "$BRANCH"
         env:
           GH_TOKEN: ${{ github.token }}
