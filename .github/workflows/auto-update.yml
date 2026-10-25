@@ -9,6 +9,11 @@ permissions:
   contents: write
   pull-requests: write
 
+# Never let two update runs race on the same bot branch.
+concurrency:
+  group: auto-update-fastfetch
+  cancel-in-progress: false
+
 jobs:
   update:
     runs-on: ubuntu-latest
@@ -54,34 +59,47 @@ jobs:
 
           echo "Updated version.mk and Makefile"
 
-      - name: Create Pull Request
+      - name: Open or refresh pull request
         if: steps.check.outputs.up_to_date == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.check.outputs.latest }}
+          HASH: ${{ steps.update.outputs.hash }}
+          BASE: ${{ github.event.repository.default_branch }}
         run: |
-          VERSION="${{ steps.check.outputs.latest }}"
-          HASH="${{ steps.update.outputs.hash }}"
+          set -euo pipefail
           BRANCH="auto-update-fastfetch-${VERSION}"
 
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git checkout -b "$BRANCH"
           git add fastfetch/version.mk fastfetch/Makefile
           git commit -m "chore: update fastfetch to ${VERSION}"
 
-          git push origin "$BRANCH"
+          # This branch is bot-owned and always regenerated from the base
+          # branch, so force-push is required: the branch of a previous run
+          # still exists (and points at a different commit) whenever the
+          # previous PR has not been merged yet, which makes a plain push
+          # fail with "non-fast-forward".
+          git push --force origin "$BRANCH"
+
+          # Reuse the already open PR instead of failing on "a pull request
+          # for branch ... already exists".
+          PR=$(gh pr list --head "$BRANCH" --base "$BASE" --state open \
+                 --json number --jq '.[0].number // 0')
+          if [ "$PR" != "0" ]; then
+            echo "PR #$PR is already open for $BRANCH; branch refreshed, nothing else to do."
+            exit 0
+          fi
 
           gh pr create \
             --title "chore: update fastfetch to ${VERSION}" \
-            --body "$(cat <<BODY
-          Auto-update fastfetch to upstream version **${VERSION}**.
+            --body "Auto-update fastfetch to upstream version **${VERSION}**.
 
           | | |
           |---|---|
           | Version | \`${VERSION}\` |
-          | SHA256 | \`${HASH}\` |
-          BODY
-          )" \
-            --base auto-update-fastfetch \
+          | SHA256 | \`${HASH}\` |" \
+            --base "$BASE" \
             --head "$BRANCH"
-        env:
-          GH_TOKEN: ${{ github.token }}
