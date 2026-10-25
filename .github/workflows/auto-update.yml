@@ -8,6 +8,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write   # required to dispatch the build workflow
 
 # Never let two update runs race on the same bot branch.
 concurrency:
@@ -59,7 +60,7 @@ jobs:
 
           echo "Updated version.mk and Makefile"
 
-      - name: Open or refresh pull request
+      - name: Open, merge and build pull request
         if: steps.check.outputs.up_to_date == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -88,18 +89,46 @@ jobs:
           # for branch ... already exists".
           PR=$(gh pr list --head "$BRANCH" --base "$BASE" --state open \
                  --json number --jq '.[0].number // 0')
-          if [ "$PR" != "0" ]; then
-            echo "PR #$PR is already open for $BRANCH; branch refreshed, nothing else to do."
-            exit 0
-          fi
-
-          gh pr create \
-            --title "chore: update fastfetch to ${VERSION}" \
-            --body "Auto-update fastfetch to upstream version **${VERSION}**.
+          if [ "$PR" = "0" ]; then
+            gh pr create \
+              --title "chore: update fastfetch to ${VERSION}" \
+              --body "Auto-update fastfetch to upstream version **${VERSION}**.
 
           | | |
           |---|---|
           | Version | \`${VERSION}\` |
           | SHA256 | \`${HASH}\` |" \
-            --base "$BASE" \
-            --head "$BRANCH"
+              --base "$BASE" \
+              --head "$BRANCH"
+            PR=$(gh pr view "$BRANCH" --json number --jq '.number')
+          fi
+
+          # GitHub computes "mergeable" asynchronously, so a merge issued
+          # right after the push may fail for a moment. Retry instead of
+          # leaving the update pending until the next scheduled run.
+          merged=0
+          for attempt in 1 2 3 4 5 6; do
+            if gh pr merge "$PR" --merge; then
+              merged=1
+              break
+            fi
+            echo "Merge attempt ${attempt} failed, retrying in 5s..."
+            sleep 5
+          done
+          if [ "$merged" != "1" ]; then
+            echo "::error::Could not merge PR #$PR for ${VERSION}"
+            exit 1
+          fi
+          echo "Merged PR #$PR (${VERSION})"
+
+          # The head branch is not needed anymore.
+          git push origin --delete "$BRANCH" || true
+
+          # Pushes/PRs created with GITHUB_TOKEN do not trigger other
+          # workflows, so the build must be dispatched explicitly
+          # (workflow_dispatch is the documented exception).
+          gh workflow run build.yml \
+            --ref "$BASE" \
+            -f tag="$VERSION" \
+            -f "text=Auto-update fastfetch to upstream v${VERSION}"
+          echo "Dispatched build.yml for ${VERSION}"
