@@ -55,12 +55,70 @@ jobs:
           NO_SHFMT_CHECK: 1
           MAKEFLAGS: -j$(nproc)
           V: s
+          # 固定签名密钥：24.10 用 usign，25.12 用 EC P-256
+          KEY_BUILD: ${{ secrets.KEY_BUILD }}
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+          # 生成并签名 Packages/Packages.sig（24.10）与 packages.adb（25.12）
+          INDEX: "1"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.arch }}-${{ matrix.sdk }}
           path: bin/packages/${{ matrix.arch }}/packages_ci/*
+
+  publish-feed:
+    name: Publish package feed
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read version
+        id: version
+        run: |
+          VERSION=$(grep -oP 'FASTFETCH_VERSION=\K[0-9.]+' fastfetch/version.mk)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Assemble feed tree
+        run: |
+          set -euo pipefail
+          mkdir -p feed
+          cp keys/key-build.pub keys/public-key.pem feed/
+          touch feed/.nojekyll
+
+          for dir in artifacts/*; do
+            name=$(basename "$dir")
+            arch=${name%-*}
+            sdk=${name##*-}
+            major=${sdk%.*}
+            dest="feed/${major}/${arch}"
+            mkdir -p "$dest"
+            cp -a "$dir"/. "$dest"/
+          done
+
+          find feed -type f | sort
+
+      - name: Push feed branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cd feed
+          git init -q
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "feed: fastfetch v${{ steps.version.outputs.version }}"
+          git push --force \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            HEAD:feed
 
   release:
     name: Publish Release
