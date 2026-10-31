@@ -1,0 +1,13 @@
+Package: fastfetch
+Version: 2.70.0-r1
+Depends: libc
+License: MIT
+Section: utils
+URL: https://github.com/fastfetch-cli/fastfetch
+Architecture: x86_64
+Installed-Size: 1382400
+Filename: fastfetch_2.70.0-r1_x86_64.ipk
+Size: 442271
+SHA256sum: bf69273b91224e6833a0c5cb255d097aa349073134576449bafc568fff618884
+Description:  Fastfetch is a fast neofetch-like system information tool.
+

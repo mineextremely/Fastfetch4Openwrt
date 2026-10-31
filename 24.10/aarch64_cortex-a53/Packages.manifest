@@ -1,0 +1,18 @@
+Package: fastfetch
+Version: 2.70.0-r1
+Depends: libc
+Source: /feed/fastfetch
+SourceName: fastfetch
+License: MIT
+LicenseFiles: LICENSE
+Section: utils
+SourceDateEpoch: 1792036554
+URL: https://github.com/fastfetch-cli/fastfetch
+Maintainer: Nova
+Architecture: aarch64_cortex-a53
+Installed-Size: 1413120
+Filename: fastfetch_2.70.0-r1_aarch64_cortex-a53.ipk
+Size: 481192
+SHA256sum: fb48f2937a8f6d237117867115d1a02c3bfebae7f0d679c486f6398aef860d26
+Description:  Fastfetch is a fast neofetch-like system information tool.
+
