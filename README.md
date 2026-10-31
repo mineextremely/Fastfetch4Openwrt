@@ -12,6 +12,7 @@
 - 面向路由器裁剪：不编译 X11、Wayland、DRM、PulseAudio、OpenGL、Vulkan、systemd、SQLite3、ImageMagick 等依赖
 - 同时支持 OpenWrt 24.10（opkg / `.ipk`）和 25.12（apk / `.apk`）
 - GitHub Actions 预编译 3 种架构 × 2 个 SDK 版本
+- 提供带签名的 opkg/apk 软件源，可直接 `opkg install fastfetch` / `apk add fastfetch`
 - 版本号集中管理，每日自动检查上游新版本
 
 ## 仓库结构
@@ -21,12 +22,18 @@
 ├── fastfetch/
 │   ├── Makefile          # OpenWrt 包定义：源码地址、SHA256、编译选项
 │   └── version.mk        # fastfetch 版本号（唯一来源）
+├── keys/
+│   ├── key-build.pub     # opkg（usign）公钥
+│   └── public-key.pem    # apk（EC P-256）公钥
 ├── .github/workflows/
 │   ├── auto-update.yml   # 每日检查上游 → 更新版本 → PR → 自动合并 → 触发构建
-│   └── build.yml         # 多架构编译 + 发布 Release
+│   └── build.yml         # 多架构编译 + 发布 Release + 发布签名软件源
 ├── README.md
 └── LICENSE
 ```
+
+签名软件源发布在独立的 `feed` 分支，由 GitHub Pages 提供：
+<https://mineextremely.github.io/Fastfetch4Openwrt/>
 
 ## 版本管理
 
@@ -106,7 +113,36 @@ apk add --allow-untrusted fastfetch-*.apk
 fastfetch
 ```
 
-> `--allow-untrusted` 是因为构建产物没有 OpenWrt 官方签名密钥。
+> 直接安装 Release 里的单个 `.apk` 时，因为包文件本身没有签名，需要 `--allow-untrusted`；想免去这个参数并让包管理器自动校验，请使用下面的签名软件源。
+
+## 签名软件源（推荐）
+
+构建时用固定密钥签名 `Packages` / `packages.adb` 索引，公钥随仓库发布。把对应版本的源加入路由器后，可以直接按包名安装并享受签名校验。
+
+OpenWrt 24.10（opkg）：
+
+```bash
+wget -O /tmp/key-build.pub https://mineextremely.github.io/Fastfetch4Openwrt/key-build.pub
+opkg-key add /tmp/key-build.pub
+. /etc/openwrt_release
+echo "src/gz fastfetch4openwrt https://mineextremely.github.io/Fastfetch4Openwrt/24.10/${DISTRIB_ARCH}" >> /etc/opkg/customfeeds.conf
+opkg update
+opkg install fastfetch
+```
+
+OpenWrt 25.12（apk）：
+
+```bash
+wget -O /etc/apk/keys/fastfetch.pem https://mineextremely.github.io/Fastfetch4Openwrt/public-key.pem
+. /etc/openwrt_release
+echo "https://mineextremely.github.io/Fastfetch4Openwrt/25.12/${DISTRIB_ARCH}/packages.adb" >> /etc/apk/repositories.d/customfeeds.list
+apk update
+apk add fastfetch
+```
+
+- 源目录按 SDK 大版本分开：24.10 用 `Packages` / `.ipk`，25.12 用 `packages.adb` / `.apk`，不能混用
+- `${DISTRIB_ARCH}` 来自 `/etc/openwrt_release`，例如 `aarch64_cortex-a53`、`x86_64`
+- 公钥也可直接从仓库的 `keys/` 目录获取；usign 指纹由 `opkg-key add` 自动计算
 
 ## 自动化流程
 
@@ -140,12 +176,14 @@ Actions → **Build-OpenWrt-fastfetch** → Run workflow，可填写：
 | `tag` | Release 版本号，留空则使用 `version.mk` 中的版本 |
 | `text` | 追加到 Release 说明末尾的文字 |
 
-矩阵为 3 架构 × 2 SDK，全部完成后把产物打包成 zip 并创建/更新对应 tag 的 Release。
+矩阵为 3 架构 × 2 SDK，全部完成后把产物打包成 zip 并创建/更新对应 tag 的 Release，同时把各架构的签名索引与安装包发布到 `feed` 分支。
 
 ## 维护说明
 
 - 默认分支为 `auto-update-fastfetch`
 - 自动更新与发布使用仓库自带的 `GITHUB_TOKEN`，所需权限：`contents: write`、`pull-requests: write`、`actions: write`
+- 签名私钥只存放在 Actions Secrets：`KEY_BUILD`（usign）与 `PRIVATE_KEY`（apk EC P-256）；公钥提交在 `keys/` 并复制到 `feed` 分支根目录
+- 软件源由 `build.yml` 的 `publish-feed` 任务发布到 `feed` 分支，经 GitHub Pages 提供；24.10/25.12 的目录必须严格分开
 - 若默认分支启用 required status checks，`gh pr merge` 会失败，需要调整分支保护或改用 PAT
 - `GitHubActionsLogs/` 是本地排查 Actions 日志的目录，已加入 `.gitignore`，不会提交
 
@@ -154,7 +192,7 @@ Actions → **Build-OpenWrt-fastfetch** → Run workflow，可填写：
 | 现象 | 处理 |
 |------|------|
 | 编译报 `Hash mismatch` | 确认 `version.mk` 的版本与 `PKG_HASH` 对应；重新对官方 tarball 计算 SHA256 |
-| `apk` 安装提示签名错误 | 使用 `apk add --allow-untrusted` |
+| `apk` 安装提示签名错误 | 本地单包安装可用 `apk add --allow-untrusted`；从本仓库签名源安装不应出现，若出现请确认公钥路径与 `packages.adb` 地址 |
 | 安装后无法运行或依赖缺失 | 包架构必须与固件一致，可用 `opkg print-architecture` 确认 |
 | 自动更新 PR 未合并、Actions 变红 | 查看运行日志，确认默认分支没有阻止 bot 的合并规则 |
 
