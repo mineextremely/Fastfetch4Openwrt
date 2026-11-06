@@ -1,0 +1,1 @@
+{"version":1,"bomFormat":"CycloneDX","components":[{"type":"application","version":"2.71.0","name":"fastfetch","licenses":[{"license":{"name":"MIT"}}]}],"serialNumber":"urn:uuid:27680915-c578-41c4-a0d3-91408ad08da4","metadata":{"timestamp":"2026-11-06T05:59:04Z"},"specVersion":"1.4"}
